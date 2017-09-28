@@ -124,8 +124,220 @@ class Events(APIView):
     parser_classes = (parsers.JSONParser,parsers.FormParser)
     renderer_classes = (renderers.JSONRenderer, )
 
+    def post(self, request, *args, **kwargs):
+        print 'REQUEST DATA'
+        print str(request.data)
+
+        eventtype = request.data.get('eventtype')
+        timestamp = int(request.data.get('timestamp'))
+        userid = request.data.get('userid')
+        requestor = request.META['REMOTE_ADDR']
+
+        newEvent = Event(
+            eventtype=eventtype,
+            timestamp=datetime.datetime.fromtimestamp(timestamp/1000, pytz.utc),
+            userid=userid,
+            requestor=requestor
+        )
+
+        try:
+            newEvent.clean_fields()
+        except ValidationError as e:
+            print e
+            return Response({'success':False, 'error':e}, status=status.HTTP_400_BAD_REQUEST)
+
+        newEvent.save()
+        print 'New Event Logged from: ' + requestor
+        return Response({'success': True}, status=status.HTTP_200_OK)
+
+    def get(self, request, format=None):
+        events = Event.objects.all()
+        json_data = serializers.serialize('json', events)
+        content = {'events': json_data}
+        return HttpResponse(json_data, content_type='json')
+
+class BreedDetail(APIView):
+    permission_classes = (AllowAny,)
+    parser_classes = (parsers.JSONParser,parsers.FormParser)
+    renderer_classes = (renderers.JSONRenderer, )
+
+    def delete(self, request, id, format=None):
+        Breed.objects.get(pk=id).delete()
+        return Response({'success': True}, status=status.HTTP_200_OK)
+
+    def get(self, request, id, format=None):
+        breeds = Breed.objects.get(pk=id)
+        json_data = serializers.serialize('json', [breeds])
+        content = {'breeds': json_data}
+        return HttpResponse(json_data, content_type='json')
+
+    def put(self, request, id, format=None):
+        breed = Breed.objects.get(pk=id)
+        breed.name = request.data.get('name')
+        breed.size = request.data.get('size')
+        breed.friendliness = int(request.data.get('friendliness'))
+        breed.trainability = int(request.data.get('trainability'))
+        breed.sheddingamount = int(request.data.get('sheddingamount'))
+        breed.exerciseneeds = int(request.data.get('exerciseneeds'))
+
+        breed.clean_fields()
+
+        breed.save()
+        return Response({'success': True}, status=status.HTTP_200_OK)
+
+
+
+class BreedList(APIView):
+    permission_classes = (AllowAny,)
+    parser_classes = (parsers.JSONParser,parsers.FormParser)
+    renderer_classes = (renderers.JSONRenderer, )
+
+    def get(self, request, format=None):
+        breeds = Breed.objects.all()
+        json_data = serializers.serialize('json', breeds)
+        content = {'breeds': json_data}
+        return HttpResponse(json_data, content_type='json')
+
+    def post(self, request, *args, **kwargs):
+        print 'REQUEST DATA'
+        print str(request.data)
+
+        name = request.data.get('name')
+        size = request.data.get('size')
+        friendliness = int(request.data.get('friendliness'))
+        trainability = int(request.data.get('trainability'))
+        sheddingamount = int(request.data.get('sheddingamount'))
+        exerciseneeds = int(request.data.get('exerciseneeds'))
+
+
+        createB = Breed(
+            name=name,
+            size=size,
+            friendliness=friendliness,
+            trainability=trainability,
+            sheddingamount=sheddingamount,
+            exerciseneeds=exerciseneeds
+        )
+
+
+        createB.clean_fields()
+
+        createB.save()
+        return Response({'success': True}, status=status.HTTP_200_OK)
+
+class DogDetail(APIView):
+    permission_classes = (AllowAny,)
+    parser_classes = (parsers.JSONParser,parsers.FormParser)
+    renderer_classes = (renderers.JSONRenderer, )
+
+    def delete(self, request, id, format=None):
+        Dog.objects.get(pk=id).delete()
+        return Response({'success': True}, status=status.HTTP_200_OK)
+
+    def get(self, request, id, format=None):
+        dogs = Dog.objects.get(pk=id)
+        json_data = serializers.serialize('json', [dogs])
+        content = {'dogs': json_data}
+        return HttpResponse(json_data, content_type='json')
+
+    def put(self, request, id, format=None):
+        dog = Dog.objects.get(pk=id)
+        dog.name = request.data.get('name')
+        dog.age = int(request.data.get('age'))
+        dog.gender = request.data.get('gender')
+        dog.color = request.data.get('color')
+        dog.favoriteFood = request.data.get('favoriteFood')
+        dog.favoriteToy = request.data.get('favoriteToy')
+        dog.breed = Breed.objects.get(pk=request.data.get('breed'))
+
+
+        dog.clean_fields()
+
+        dog.save()
+        return Response({'success': True}, status=status.HTTP_200_OK)
+
+
+class DogList(APIView):
+    permission_classes = (AllowAny,)
+    parser_classes = (parsers.JSONParser,parsers.FormParser)
+    renderer_classes = (renderers.JSONRenderer, )
+
+    def get(self, request, format=None):
+        dogs = Dog.objects.all()
+        json_data = serializers.serialize('json', dogs)
+        content = {'dogs': json_data}
+        return HttpResponse(json_data, content_type='json')
+
+    def post(self, request, *args, **kwargs):
+        print 'REQUEST DATA'
+        print str(request.data)
+
+        name = request.data.get('name')
+        age = int(request.data.get('age'))
+        gender = request.data.get('gender')
+        color = request.data.get('color')
+        favoriteFood = request.data.get('favoriteFood')
+        favoriteToy = request.data.get('favoriteToy')
+        breed = Breed.objects.get(pk=request.data.get('breed'))
+
+        createD = Dog(
+            name=name,
+            age=age,
+            breed=breed,
+            gender=gender,
+            color=color,
+            favoriteFood=favoriteFood,
+            favoriteToy=favoriteToy
+        )
+        createD.clean_fields()
+        createD.save()
+        return Response({'success': True}, status=status.HTTP_200_OK)
+
+
 
 class ActivateIFTTT(APIView):
     permission_classes = (AllowAny,)
     parser_classes = (parsers.JSONParser,parsers.FormParser)
     renderer_classes = (renderers.JSONRenderer, )
+
+    def post(self,request):
+        print 'REQUEST DATA'
+        print str(request.data)
+
+        eventtype = request.data.get('eventtype')
+        timestamp = int(request.data.get('timestamp'))
+        requestor = request.META['REMOTE_ADDR']
+        api_key = ApiKey.objects.all().first()
+        event_hook = "test"
+
+        print "Creating New event"
+
+        newEvent = Event(
+            eventtype=eventtype,
+            timestamp=datetime.datetime.fromtimestamp(timestamp/1000, pytz.utc),
+            userid=str(api_key.owner),
+            requestor=requestor
+        )
+
+        print newEvent
+        print "Sending Device Event to IFTTT hook: " + str(event_hook)
+
+        #send the new event to IFTTT and print the result
+        event_req = requests.post('https://maker.ifttt.com/trigger/'+str(event_hook)+'/with/key/'+api_key.key, data= {
+            'value1' : timestamp,
+            'value2':  "\""+str(eventtype)+"\"",
+            'value3' : "\""+str(requestor)+"\""
+        })
+        print event_req.text
+
+        #check that the event is safe to store in the databse
+        try:
+            newEvent.clean_fields()
+        except ValidationError as e:
+            print e
+            return Response({'success':False, 'error':e}, status=status.HTTP_400_BAD_REQUEST)
+
+        #log the event in the DB
+        newEvent.save()
+        print 'New Event Logged'
+        return Response({'success': True}, status=status.HTTP_200_OK)
