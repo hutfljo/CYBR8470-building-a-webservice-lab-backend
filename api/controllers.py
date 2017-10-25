@@ -40,6 +40,11 @@ import json, datetime, pytz
 from django.core import serializers
 import requests
 
+#bleach for input sanitization
+import bleach
+#re for regex
+import re
+
 
 def home(request):
    """
@@ -60,15 +65,15 @@ class Register(APIView):
 
     def post(self, request, *args, **kwargs):
         # Login
-        username = request.POST.get('username') #you need to apply validators to these
+        username = bleach.clean(request.POST.get('username')) #you need to apply validators to these
         print username
-        password = request.POST.get('password') #you need to apply validators to these
-        email = request.POST.get('email') #you need to apply validators to these
-        gender = request.POST.get('gender') #you need to apply validators to these
-        age = request.POST.get('age') #you need to apply validators to these
-        educationlevel = request.POST.get('educationlevel') #you need to apply validators to these
-        city = request.POST.get('city') #you need to apply validators to these
-        state = request.POST.get('state') #you need to apply validators to these
+        password = bleach.clean(request.POST.get('password')) #you need to apply validators to these
+        email = bleach.clean(request.POST.get('email')) #you need to apply validators to these
+        gender = bleach.clean(request.POST.get('gender')) #you need to apply validators to these
+        age = bleach.clean(request.POST.get('age')) #you need to apply validators to these
+        educationlevel = bleach.clean(request.POST.get('educationlevel')) #you need to apply validators to these
+        city = bleach.clean(request.POST.get('city')) #you need to apply validators to these
+        state = bleach.clean(request.POST.get('state')) #you need to apply validators to these
 
         print request.POST.get('username')
         if User.objects.filter(username=username).exists():
@@ -100,19 +105,21 @@ class Session(APIView):
         # Get the current user
         if request.user.is_authenticated():
             return self.form_response(True, request.user.id, request.user.username)
-        return self.form_response(False, None, None)
+        return Response({'success': False}, status=status.HTTP_400_BAD_REQUEST)
 
     def post(self, request, *args, **kwargs):
         # Login
-        username = request.POST.get('username')
-        password = request.POST.get('password')
+        username = bleach.clean(request.POST.get('username'))
+        password = bleach.clean(request.POST.get('password'))
         user = authenticate(username=username, password=password)
-        if user is not None:
-            if user.is_active:
-                login(request, user)
-                return self.form_response(True, user.id, user.username)
-            return self.form_response(False, None, None, "Account is suspended")
-        return self.form_response(False, None, None, "Invalid username or password")
+        if request.user.is_authenticated():
+            if user is not None:
+                if user.is_active:
+                    login(request, user)
+                    return self.form_response(True, user.id, user.username)
+                return self.form_response(False, None, None, "Account is suspended")
+            return self.form_response(False, None, None, "Invalid username or password")
+        return self.form_response(False, None, None)
 
     def delete(self, request, *args, **kwargs):
         # Logout
@@ -122,10 +129,98 @@ class Session(APIView):
 class Events(APIView):
     permission_classes = (AllowAny,)
     parser_classes = (parsers.JSONParser,parsers.FormParser)
-    renderer_classes = (renderers.JSONRenderer, )
+    renderer_classes = (renderers.JSONRenderer,)
 
+    def form_response(self, isauthenticated, userid, username, error=""):
+        data = {
+            'isauthenticated': isauthenticated,
+            'userid': userid,
+            'username': username
+        }
+        if error:
+            data['message'] = error
+
+        return Response(data)
+    def post(self, request, *args, **kwargs):
+        if request.user.is_authenticated():
+
+            print 'REQUEST DATA'
+            print str(request.data)
+
+            eventtype = bleach.clean(request.data.get('eventtype'))
+            timestamp = int(request.data.get('timestamp'))
+
+            userid = bleach.clean(request.data.get('userid'))
+            requestor = request.META['REMOTE_ADDR']
+
+            newEvent = Event(
+                eventtype=eventtype,
+                timestamp=datetime.datetime.fromtimestamp(timestamp/1000, pytz.utc),
+                userid=userid,
+                requestor=requestor
+            )
+
+            try:
+                newEvent.clean_fields()
+            except ValidationError as e:
+                print e
+                return Response({'success':False, 'error':e}, status=status.HTTP_400_BAD_REQUEST)
+
+            newEvent.save()
+            print 'New Event Logged from: ' + requestor
+            return Response({'success': True}, status=status.HTTP_200_OK)
+        return Response({'success': False}, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request, format=None):
+        events = Event.objects.all()
+        json_data = serializers.serialize('json', events)
+        content = {'events': json_data}
+        return HttpResponse(json_data, content_type='json')
 
 class ActivateIFTTT(APIView):
     permission_classes = (AllowAny,)
     parser_classes = (parsers.JSONParser,parsers.FormParser)
     renderer_classes = (renderers.JSONRenderer, )
+
+    def post(self,request):
+        print 'REQUEST DATA'
+        print str(request.data)
+
+        eventtype = bleach.clean(request.data.get('eventtype'))
+
+        timestamp = int(request.data.get('timestamp'))
+        requestor = request.META['REMOTE_ADDR']
+        api_key = ApiKey.objects.all().first()
+        event_hook = "test"
+
+        print "Creating New event"
+
+        newEvent = Event(
+            eventtype=eventtype,
+            timestamp=datetime.datetime.fromtimestamp(timestamp/1000, pytz.utc),
+            userid=str(api_key.owner),
+            requestor=requestor
+        )
+
+        print newEvent
+        print "Sending Device Event to IFTTT hook: " + str(event_hook)
+
+        #send the new event to IFTTT and print the result
+        event_req = requests.post('https://maker.ifttt.com/trigger/'+str(event_hook)+'/with/key/'+api_key.key, data= {
+            'value1' : timestamp,
+            'value2':  "\""+str(eventtype)+"\"",
+            'value3' : "\""+str(requestor)+"\""
+        })
+        print event_req.text
+
+        #check that the event is safe to store in the databse
+        try:
+            newEvent.clean_fields()
+        except ValidationError as e:
+            print e
+            return Response({'success':False, 'error':e}, status=status.HTTP_400_BAD_REQUEST)
+
+        #log the event in the DB
+        newEvent.save()
+        print 'New Event Logged'
+        return Response({'success': True}, status=status.HTTP_200_OK)
